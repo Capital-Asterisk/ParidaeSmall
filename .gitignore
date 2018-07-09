@@ -4,3 +4,10 @@ Titsmall.files
 Titsmall.includes
 Titsmall.creator.user
 testprgram
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+powversi
+titsmall-test
+testprogram
