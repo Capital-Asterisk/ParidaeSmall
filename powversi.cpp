@@ -75,8 +75,10 @@ public:
 
     Powversi()
     {
-        m_board[0] = (1 << 27) | (uint64_t(1) << 36);
-        m_board[1] = (1 << 28) | (uint64_t(1) << 35);
+        //m_board[0] = (1 << 28) | (uint64_t(1) << 35);
+        //m_board[1] = (1 << 27) | (uint64_t(1) << 36);
+        m_board[0] = (uint64_t(1) << xy(3, 4)) | (uint64_t(1) << xy(4, 4)) | (uint64_t(1) << xy(5, 5));
+        m_board[1] = (uint64_t(1) << xy(1, 3)) | (uint64_t(1) << xy(2, 3)) | (uint64_t(1) << xy(3, 3)) | (uint64_t(1) << xy(4, 3)) | (uint64_t(1) << xy(4, 2));
         m_printMe.reserve(80*25*3);
         m_possibleMoves.reserve(60);
         m_turn = 0;
@@ -95,11 +97,11 @@ public:
                 // 00 is replaced by a game piece or spaces
                 if ((m_board[0] & tile) != 0)
                 {
-                    printf("██");
+                    printf("░░");
                 }
                 else if ((m_board[1] & tile) != 0)
                 {
-                    printf("░░");
+                    printf("██");
                 }
                 else
                 {
@@ -122,8 +124,8 @@ public:
                         } else {
 
                             //printf("%02i", moveIndex);
-                            printf("%i", moveIndex);
-                            if (moveIndex < 10)
+                            printf("%i", moveIndex + 1);
+                            if (moveIndex < 9)
                             {
                                 printf(" ");
                             }
@@ -147,9 +149,44 @@ public:
         }
     }
 
-    void line_check(uint8_t pos, uint8_t dir) {
+    bool line_check(int x, int y, int dirX, int dirY, bool capture) {
+        // index of a spot right next to (x, y)
+        // Test if that new tile is of the other colour
 
+        uint8_t turn = m_turn % 2;
+        uint64_t tile;
+        int i = 1;
+        int ind = 0;
+        bool run = true;
+        while (run)
+        {
+            // Step along specified direction
+            ind = xy(x + dirX * i, y + dirY * i);
 
+            // False if edge of board reached
+            if (ind == -1)
+            {
+                return false;
+            }
+            tile = (uint64_t(1) << ind);
+            // Continue if the current tile is of opposite colour
+            if (m_board[!turn] & tile)
+            {
+                i ++;
+            } else {
+                run = false;
+            }
+        }
+        // false if nothing in between, or blank
+        if (i == 1)
+        {
+           return false;
+        }
+        if (m_board[turn] & tile)
+        {
+            return true;
+        }
+        return false;
     }
 
     void calc_possible_moves()
@@ -164,13 +201,28 @@ public:
                 int ind = xy(x, y);
                 uint64_t tile = (uint64_t(1) << ind);
                 // If the current tile is blank
-                if (!((m_board[0] | m_board[1]) & tile)) {
-                    m_possibleMoves.push_back(ind);
-
+                if (!((m_board[0] | m_board[1]) & tile))
+                {
+                    if (line_check(x, y, 1, 1, false)
+                        || line_check(x, y, 1, -1, false)
+                        || line_check(x, y, -1, 1, false)
+                        || line_check(x, y, -1, -1, false)
+                        || line_check(x, y, 0, 1, false)
+                        || line_check(x, y, 0, -1, false)
+                        || line_check(x, y, 1, 0, false)
+                        || line_check(x, y, -1, 0, false))
+                    {
+                        m_possibleMoves.push_back(ind);
+                    }
                 }
 
             }
         }
+    }
+
+    void put_piece(bool white, uint8_t pos)
+    {
+        m_board[white] |= (uint64_t(1) << pos);
     }
 
     void two_player()
@@ -182,7 +234,8 @@ public:
             this->print(true);
             printf("\n\n\n %s's Turn: ", (m_turn % 2) ? "[██] White" : "[░░] Black");
             scanf("%i", &i);
-
+            put_piece((m_turn % 2), m_possibleMoves[i - 1]);
+            m_turn ++;
         }
     }
 
