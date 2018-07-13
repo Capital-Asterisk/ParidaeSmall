@@ -57,12 +57,15 @@ class Powversi
             "\n 8│ 00 │ 00 │ 00 │ 00 │ 00 │ 00 │ 00 │ 00 │  II II II II II II II II II II"
             "\n  ┕━━━━┷━━━━┷━━━━┷━━━━┷━━━━┷━━━━┷━━━━┷━━━━┙   "
             "\n ╺────────────────────────────────────────────────────────────────────────────╸";
-    std::vector<char> m_printMe;
     std::vector<uint8_t> m_possibleMoves;
     std::vector<uint8_t> m_turns;
+    std::vector<uint16_t> m_moveHistory;
     uint64_t m_board[2]; // [black] [white]
     uint8_t m_quadCounts[8]; // [quad 1-4 black], [quavd 1-4 white]; cartesian order
     uint8_t m_turn;
+
+    // For break computer
+    std::vector<uint64_t[2]> m_boardStack;
 
 
 public:
@@ -72,14 +75,25 @@ public:
         }
         return (y * 8) + x;
     }
+    static inline int quadrant(uint8_t x, uint8_t y) {
+        return 2 * (y > 3) + ((x / 4) ^ (y < 4));
+    }
 
     Powversi()
     {
-        //m_board[0] = (1 << 28) | (uint64_t(1) << 35);
-        //m_board[1] = (1 << 27) | (uint64_t(1) << 36);
-        m_board[0] = (uint64_t(1) << xy(3, 4)) | (uint64_t(1) << xy(4, 4)) | (uint64_t(1) << xy(5, 5));
-        m_board[1] = (uint64_t(1) << xy(1, 3)) | (uint64_t(1) << xy(2, 3)) | (uint64_t(1) << xy(3, 3)) | (uint64_t(1) << xy(4, 3)) | (uint64_t(1) << xy(4, 2));
-        m_printMe.reserve(80*25*3);
+        m_board[0] = (1 << 28) | (uint64_t(1) << 35);
+        m_board[1] = (1 << 27) | (uint64_t(1) << 36);
+        m_quadCounts[0] = 1;
+        m_quadCounts[1] = 0;
+        m_quadCounts[2] = 1;
+        m_quadCounts[3] = 0;
+        m_quadCounts[4] = 0;
+        m_quadCounts[5] = 1;
+        m_quadCounts[6] = 0;
+        m_quadCounts[7] = 1;
+        //m_board[0] = (uint64_t(1) << xy(3, 4)) | (uint64_t(1) << xy(4, 4)) | (uint64_t(1) << xy(5, 5));
+        //m_board[1] = (uint64_t(1) << xy(1, 3)) | (uint64_t(1) << xy(2, 3)) | (uint64_t(1) << xy(3, 3)) | (uint64_t(1) << xy(4, 3)) | (uint64_t(1) << xy(4, 2));
+        //m_printMe.reserve(80*25*3);
         m_possibleMoves.reserve(60);
         m_turn = 0;
     }
@@ -89,11 +103,12 @@ public:
         // loop through string until it's null;
         int i = 0;
         uint64_t tile = 1;
+        uint8_t history = 0;
         char c;
         while ((c = smc_boardTemplate[i]) != 0) {
             switch (c)
             {
-            case '0':
+            case '0': // Print a peice
                 // 00 is replaced by a game piece or spaces
                 if ((m_board[0] & tile) != 0)
                 {
@@ -140,6 +155,24 @@ public:
                 tile = tile << 1;
                 i ++; // skip next char
                 break;
+            case '-': // Print # of blacks
+                printf("%02u", m_quadCounts[0] + m_quadCounts[1] + m_quadCounts[2] + m_quadCounts[3]);
+                i ++; // skip next char
+                break;
+            case '+': // Print # of whites
+                printf("%02u", m_quadCounts[4] + m_quadCounts[5] + m_quadCounts[6] + m_quadCounts[7]);
+                i ++; // skip next char
+                break;
+            case 'I':
+                if (m_moveHistory.size() > history)
+                {
+                    printf("%c%c", char(m_moveHistory[history] << 8 >> 8), char(m_moveHistory[history] >> 8));
+                } else {
+                    printf("  ");
+                }
+                history ++;
+                i ++; // skip next char
+                break;
             default:
                 putchar(c);
                 break;
@@ -155,13 +188,14 @@ public:
 
         uint8_t turn = m_turn % 2;
         uint64_t tile;
-        int i = 1;
+        uint64_t captures = 0;
+        int steps = 1;
         int ind = 0;
         bool run = true;
         while (run)
         {
             // Step along specified direction
-            ind = xy(x + dirX * i, y + dirY * i);
+            ind = xy(x + dirX * steps, y + dirY * steps);
 
             // False if edge of board reached
             if (ind == -1)
@@ -172,18 +206,29 @@ public:
             // Continue if the current tile is of opposite colour
             if (m_board[!turn] & tile)
             {
-                i ++;
+                captures |= tile;
+                steps ++;
             } else {
                 run = false;
             }
         }
         // false if nothing in between, or blank
-        if (i == 1)
+        if (steps == 1)
         {
            return false;
         }
+        // Check if the last tile is of
         if (m_board[turn] & tile)
         {
+            if (capture) {
+                for (int i = 1; i < steps; i ++) {
+                    int quad = quadrant(x + dirX * i, y + dirY * i);
+                    m_quadCounts[quad + 4 * turn] ++;
+                    m_quadCounts[quad + 4 * !turn] --;
+                }
+                m_board[!turn] ^= captures; // Remove tiles of other colour
+                m_board[turn] |= captures; // Add new tiles
+            }
             return true;
         }
         return false;
@@ -220,25 +265,49 @@ public:
         }
     }
 
-    void put_piece(bool white, uint8_t pos)
+    void put_piece(bool white, int x, int y)
     {
-        m_board[white] |= (uint64_t(1) << pos);
+        // Add the new peice
+        m_board[white] |= (uint64_t(1) << xy(x, y));
+        m_quadCounts[quadrant(x, y) + 4 * white] ++;
+        // Capture some other ones1
+        line_check(x, y, 1, 1, true);
+        line_check(x, y, 1, -1, true);
+        line_check(x, y, -1, 1, true);
+        line_check(x, y, -1, -1, true);
+        line_check(x, y, 0, 1, true);
+        line_check(x, y, 0, -1, true);
+        line_check(x, y, 1, 0, true);
+        line_check(x, y, -1, 0, true);
     }
 
     void two_player()
     {
         int i;
+
         while (true) {
             printf("POWVERSI\n");
             this->calc_possible_moves();
             this->print(true);
-            printf("\n\n\n %s's Turn: ", (m_turn % 2) ? "[██] White" : "[░░] Black");
-            scanf("%i", &i);
-            put_piece((m_turn % 2), m_possibleMoves[i - 1]);
+            if (m_possibleMoves.size() != 0) {
+                //printf("QuadStats: %u %u %u %u\n", m_quadCounts[0], m_quadCounts[1], m_quadCounts[2], m_quadCounts[3]);
+                printf("\n\n\n %s's Turn: ", (m_turn % 2) ? "[██] White" : "[░░] Black");
+                scanf("%i", &i);
+                int x = m_possibleMoves[i - 1] % 8;
+                int y = m_possibleMoves[i - 1] / 8;
+                m_moveHistory.push_back(uint8_t('A' + x) | ((uint8_t('1' + y) << 8)));
+                put_piece((m_turn % 2), x, y);
+            } else {
+                m_moveHistory.push_back('-' | ('-' << 8));
+            }
             m_turn ++;
         }
     }
 
+    void break_computer()
+    {
+
+    }
 };
 
 int main()
